@@ -1,4 +1,19 @@
-﻿using System;
+﻿/*!
+Copyright 2014 Yaminike
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -9,20 +24,28 @@ namespace DarkMapleLib
     /// <summary>
     /// Initialization vector used by the Cipher class
     /// </summary>
-    /// <remarks>
-    /// Created by Yaminike, aka Minike, aka 0minike0
-    /// </remarks>
-    public class InitializationVector
+    internal class InitializationVector
     {
         /// <summary>
         /// IV Container
         /// </summary>
-        public UInt32 Value = 0;
+        private UInt32 Value = 0;
+
+        /// <summary>
+        /// Gets the bytes of the current container
+        /// </summary>
+        internal byte[] Bytes
+        {
+            get
+            {
+                return BitConverter.GetBytes(Value);
+            }
+        }
 
         /// <summary>
         /// Gets the HIWORD from the current container
         /// </summary>
-        public UInt16 HIWORD
+        internal UInt16 HIWORD
         {
             get
             {
@@ -33,7 +56,7 @@ namespace DarkMapleLib
         /// <summary>
         /// Gets the LOWORD from the current container
         /// </summary>
-        public UInt16 LOWORD
+        internal UInt16 LOWORD
         {
             get
             {
@@ -41,11 +64,24 @@ namespace DarkMapleLib
             }
         }
 
+#if KMS || EMS
+        /// <summary>
+        /// IV Security check
+        /// </summary>
+        internal bool MustSend
+        {
+            get
+            {
+                return LOWORD % 0x1F == 0;
+            }
+        }
+#endif
+
         /// <summary>
         /// Creates a IV instance using <paramref name="vector"/>
         /// </summary>
         /// <param name="vector">Initialization vector</param>
-        public InitializationVector(UInt32 vector)
+        internal InitializationVector(UInt32 vector)
         {
             Value = vector;
         }
@@ -53,7 +89,7 @@ namespace DarkMapleLib
         /// <summary>
         /// Shuffles the current IV to the next vector using the shuffle table
         /// </summary>
-        public unsafe void Shuffle()
+        internal unsafe void Shuffle()
         {
             UInt32 Key = Constants.DefaultKey;
             UInt32* pKey = &Key;
@@ -74,15 +110,6 @@ namespace DarkMapleLib
             }
 
             Value = Key;
-        }
-
-        /// <summary>
-        /// Checks if the current IV matches the requirements of being in a need to be pushed to the server
-        /// </summary>
-        /// <returns>Bool if match</returns>
-        public bool CheckIV()
-        {
-            return LOWORD % 0x1F == 0;
         }
     }
 }

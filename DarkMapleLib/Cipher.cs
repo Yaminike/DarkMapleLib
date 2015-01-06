@@ -1,4 +1,19 @@
-﻿using System;
+﻿/*!
+Copyright 2014 Yaminike
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -9,14 +24,11 @@ namespace DarkMapleLib
     /// <summary>
     /// Cipher class used for encrypting and decrypting maple packet data
     /// </summary>
-    /// <remarks>
-    /// Alonevampire can SMD
-    /// Created by Yaminike, aka Minike, aka 0minike0
-    /// </remarks>
     public class Cipher
     {
+        #region Constructor and Variables
         /// <summary>
-        /// Transformer to transform blocks
+        /// AES transformer
         /// </summary>
         private FastAES Transformer { get; set; }
 
@@ -28,7 +40,7 @@ namespace DarkMapleLib
         /// <summary>
         /// Vector to use in the MapleCrypto
         /// </summary>
-        internal InitializationVector MapleIV { get; set; }
+        private InitializationVector MapleIV { get; set; }
 
         /// <summary>
         /// Gameversion of the current <see cref="Cipher"/> instance
@@ -41,23 +53,57 @@ namespace DarkMapleLib
         public bool Handshaken { get; set; }
 
         /// <summary>
-        /// Creates a new instance of the Cipher
+        /// Creates a new instance of <see cref="Cipher"/>
         /// </summary>
-        /// <param name="CurrentGameVersion">The current MapleStory version</param>
-        public Cipher(UInt16 CurrentGameVersion)
+        /// <param name="currentGameVersion">The current MapleStory version</param>
+        /// <param name="AESKey">AESKey for the current MapleStory version</param>
+        public Cipher(UInt16 currentGameVersion, UInt64 AESKey)
         {
-            this.Handshaken = false;
-            this.GameVersion = CurrentGameVersion;
-            this.Transformer = new FastAES(this.ExpandKey());
+            Handshaken = false;
+            GameVersion = currentGameVersion;
+            Transformer = new FastAES(ExpandKey(AESKey));
         }
+        #endregion
 
+        #region Public Methods
         /// <summary>
-        /// Manually sets the vector for the current instance
+        /// Encrypts packet data
         /// </summary>
-        public void SetIV(UInt32 vector)
+#if KMS || EMS
+        public UInt16? Encrypt(ref byte[] data, bool toClient)
         {
-            this.MapleIV = new InitializationVector(vector);
-            this.Handshaken = true;
+            if (!Handshaken || MapleIV == null) return null;
+            ushort? ret;
+#else
+        public void Encrypt(ref byte[] data, bool toClient)
+        {
+            if (!Handshaken || MapleIV == null) return;
+#endif
+
+            byte[] newData = new byte[data.Length + 4];
+            if (toClient)
+                WriteHeaderToClient(newData);
+            else
+                WriteHeaderToServer(newData);
+
+#if EMS
+            EncryptShanda(data);
+#endif
+
+            lock (Locker)
+            {
+                Transform(data);
+#if KMS || EMS
+                ret = MapleIV.MustSend ? MapleIV.LOWORD : null as ushort?;
+#endif
+            }
+
+            Buffer.BlockCopy(data, 0, newData, 4, data.Length);
+            data = newData;
+
+#if KMS || EMS
+            return ret;
+#endif
         }
 
         /// <summary>
@@ -69,64 +115,17 @@ namespace DarkMapleLib
             if (!Handshaken || MapleIV == null) return;
             int length = GetPacketLength(data);
 
-            byte[] ret = new byte[length];
-            Buffer.BlockCopy(data, 4, ret, 0, length);
+            byte[] newData = new byte[length];
+            Buffer.BlockCopy(data, 4, newData, 0, length);
 
             lock (Locker)
             {
-                Transform(ret);
+                Transform(newData);
             }
-
-            DecryptData(ret);
-            data = ret;
-        }
-
-        /// <summary>
-        /// Encrypts data using the current instance
-        /// </summary>
-        /// <param name="data">Data to encrypt</param>
-        /// <param name="toClient">Direction of the the data</param>
-        /// <returns>
-        /// True when the IV matches the requirements of being in a need to be pushed to the server 
-        /// </returns>
-        public EncryptResult Encrypt(ref byte[] data, bool toClient)
-        {
-            if (!Handshaken || MapleIV == null) return null;
-            byte[] ret = new byte[data.Length + 4];
-            if (toClient)
-                WriteHeaderToClient(ret);
-            else
-                WriteHeaderToServer(ret);
-
-            bool toSend = false;
-            EncryptData(data);
-
-            lock (Locker)
-            {
-                Transform(data);
-                toSend = MapleIV.CheckIV();
-            }
-
-            Buffer.BlockCopy(data, 0, ret, 4, data.Length);
-            data = ret;
-
-            return new EncryptResult()
-            {
-                LOIV = MapleIV.LOWORD,
-                ToSend = toSend
-            };
-        }
-
-        /// <summary>
-        /// Handles an handshake for the current instance
-        /// </summary>
-        /// <param name="data"></param>
-        public void RecvHandshake(ref byte[] data)
-        {
-            ushort length = BitConverter.ToUInt16(data, 0);
-            byte[] ret = new byte[length];
-            Buffer.BlockCopy(data, 2, ret, 0, ret.Length);
-            data = ret;
+#if EMS
+            DecryptShanda(newData);
+#endif
+            data = newData;
         }
 
         /// <summary>
@@ -140,6 +139,74 @@ namespace DarkMapleLib
             {
                 return *(ushort*)pData ^ *((ushort*)pData + 1);
             }
+        }
+
+        /// <summary>
+        /// Manually sets the vector for the current instance
+        /// </summary>
+        public void SetIV(UInt32 IV)
+        {
+            MapleIV = new InitializationVector(IV);
+            Handshaken = true;
+        }
+
+        /// <summary>
+        /// Handles an handshake for the current instance
+        /// </summary>
+        public void Handshake(ref byte[] data)
+        {
+            ushort length = BitConverter.ToUInt16(data, 0);
+            byte[] ret = new byte[length];
+            Buffer.BlockCopy(data, 2, ret, 0, ret.Length);
+            data = ret;
+        }
+        #endregion
+
+        #region Private Methods
+        /// <summary>
+        /// Expands the key we store as long
+        /// </summary>
+        /// <returns>The expanded key</returns>
+        private byte[] ExpandKey(UInt64 AESKey)
+        {
+            byte[] Expand = BitConverter.GetBytes(AESKey).Reverse().ToArray();
+            byte[] Key = new byte[Expand.Length * 4];
+            for (int i = 0; i < Expand.Length; i++)
+                Key[i * 4] = Expand[i];
+            return Key;
+        }
+
+        /// <summary>
+        /// Performs Maplestory's AES algo
+        /// </summary>
+        private void Transform(byte[] buffer)
+        {
+            int remaining = buffer.Length,
+                length = 0x5B0,
+                start = 0,
+                index;
+
+            byte[] realIV = new byte[sizeof(int) * 4],
+                   IVBytes = MapleIV.Bytes;
+
+            while (remaining > 0)
+            {
+                for (index = 0; index < realIV.Length; ++index)
+                    realIV[index] = IVBytes[index % 4];
+
+                if (remaining < length) length = remaining;
+                for (index = start; index < (start + length); ++index)
+                {
+                    if (((index - start) % realIV.Length) == 0)
+                        Transformer.TransformBlock(realIV);
+
+                    buffer[index] ^= realIV[(index - start) % realIV.Length];
+                }
+                start += length;
+                remaining -= length;
+                length = 0x5B4;
+            }
+            MapleIV.Shuffle();
         }
 
         /// <summary>
@@ -166,58 +233,14 @@ namespace DarkMapleLib
             }
         }
 
+#if EMS
         /// <summary>
-        /// Expands the key we store as long
+        /// Decrypts <paramref name="buffer"/> using the custom MapleStory shanda
         /// </summary>
-        /// <returns>The expanded key</returns>
-        private byte[] ExpandKey()
+        private void DecryptShanda(byte[] buffer)
         {
-            byte[] Expand = BitConverter.GetBytes(Constants.Key).Reverse().ToArray();
-            byte[] Key = new byte[Expand.Length * 4];
-            for (int i = 0; i < Expand.Length; i++)
-                Key[i * 4] = Expand[i];
-            return Key;
-        }
-
-        /// <summary>
-        /// Performs Maplestory's AES algo
-        /// </summary>
-        private void Transform(byte[] buffer)
-        {
-            int remaining = buffer.Length;
-            int length = 0x5B0;
-            int start = 0;
-            int index;
-            byte[] realIV = new byte[sizeof(int) * 4];
-            byte[] IVBytes = BitConverter.GetBytes(MapleIV.Value);
-            while (remaining > 0)
-            {
-                for (index = 0; index < realIV.Length; ++index)
-                    realIV[index] = IVBytes[index % 4];
-
-                if (remaining < length) length = remaining;
-                for (index = start; index < (start + length); ++index)
-                {
-                    if (((index - start) % realIV.Length) == 0)
-                        Transformer.TransformBlock(realIV);
-
-                    buffer[index] ^= realIV[(index - start) % realIV.Length];
-                }
-                start += length;
-                remaining -= length;
-                length = 0x5B4;
-            }
-            MapleIV.Shuffle();
-        }
-
-        /// <summary>
-        /// Decrypts <paramref name="buffer"/> using the custom maple crypto
-        /// </summary>
-        private void DecryptData(byte[] buffer)
-        {
-            int length = buffer.Length;
+            int length = buffer.Length, i;
             byte xorKey, save, len, temp;
-            int i;
             for (int passes = 0; passes < 3; passes++)
             {
                 xorKey = 0;
@@ -248,9 +271,9 @@ namespace DarkMapleLib
         }
 
         /// <summary>
-        /// Encrypts <paramref name="buffer"/> using the custom maple crypto
+        /// Encrypts <paramref name="buffer"/> using the custom MapleStory shanda
         /// </summary>
-        private void EncryptData(byte[] buffer)
+        private void EncryptShanda(byte[] buffer)
         {
             int length = buffer.Length;
             byte xorKey, len, temp;
@@ -297,11 +320,7 @@ namespace DarkMapleLib
             int tmp = b << (8 - (count & 7));
             return unchecked((byte)(tmp | (tmp >> 8)));
         }
-
-        public class EncryptResult
-        {
-            public bool ToSend { get; set; }
-            public UInt16 LOIV { get; set; }
-        }
+#endif
+        #endregion
     }
 }

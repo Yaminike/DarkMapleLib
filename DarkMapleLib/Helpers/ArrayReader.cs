@@ -1,4 +1,19 @@
-﻿using System;
+﻿/*!
+Copyright 2014 Yaminike
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -9,9 +24,6 @@ namespace DarkMapleLib.Helpers
     /// <summary>
     /// Class to handle reading data from an byte array
     /// </summary>
-    /// <remarks>
-    /// Created by Yaminike, aka Minike, aka 0minike0
-    /// </remarks>
     public class ArrayReader
     {
         /// <summary>
@@ -34,7 +46,7 @@ namespace DarkMapleLib.Helpers
         /// </summary>
         public int Available
         {
-            get { return this.Length - this.Position; }
+            get { return Length - Position; }
         }
 
         /// <summary>
@@ -43,9 +55,9 @@ namespace DarkMapleLib.Helpers
         /// <param name="length">Max length to use</param>
         public ArrayReader(byte[] data, int length = -1)
         {
-            this.Length = length > data.Length ? length : data.Length;
-            this.Buffer = new byte[Length];
-            System.Buffer.BlockCopy(data, 0, this.Buffer, 0, this.Length);
+            Length = length > data.Length ? length : data.Length;
+            Buffer = new byte[Length];
+            System.Buffer.BlockCopy(data, 0, Buffer, 0, Length);
         }
 
         /// <summary>
@@ -58,11 +70,11 @@ namespace DarkMapleLib.Helpers
             if (length <= 0)
                 throw new ArgumentOutOfRangeException("length", "Length cannot be zero or negative");
 
-            int sPosition = this.Position;
-            this.Position += length;
-            if (this.Available < 0)
+            int sPosition = Position;
+            Position += length;
+            if (Available < 0)
             {
-                this.Position = sPosition; //restore old
+                Position = sPosition; //restore old
                 throw new Exception("Not enough data");
             }
 
@@ -99,7 +111,7 @@ namespace DarkMapleLib.Helpers
         public byte[] ReadBytes(int length)
         {
             byte[] toRead = new byte[length];
-            System.Buffer.BlockCopy(this.Buffer, StartRead(length), toRead, 0, length);
+            System.Buffer.BlockCopy(Buffer, StartRead(length), toRead, 0, length);
             return toRead;
         }
 
@@ -108,7 +120,7 @@ namespace DarkMapleLib.Helpers
         /// </summary>
         public short ReadShort()
         {
-            return BitConverter.ToInt16(this.Buffer, StartRead(2));
+            return BitConverter.ToInt16(Buffer, StartRead(2));
         }
 
         /// <summary>
@@ -116,7 +128,7 @@ namespace DarkMapleLib.Helpers
         /// </summary>
         public ushort ReadUShort()
         {
-            return BitConverter.ToUInt16(this.Buffer, StartRead(2));
+            return BitConverter.ToUInt16(Buffer, StartRead(2));
         }
 
         /// <summary>
@@ -124,7 +136,7 @@ namespace DarkMapleLib.Helpers
         /// </summary>
         public int ReadInt()
         {
-            return BitConverter.ToInt32(this.Buffer, StartRead(4));
+            return BitConverter.ToInt32(Buffer, StartRead(4));
         }
 
         /// <summary>
@@ -132,7 +144,7 @@ namespace DarkMapleLib.Helpers
         /// </summary>
         public uint ReadUInt()
         {
-            return BitConverter.ToUInt32(this.Buffer, StartRead(4));
+            return BitConverter.ToUInt32(Buffer, StartRead(4));
         }
 
         /// <summary>
@@ -140,7 +152,7 @@ namespace DarkMapleLib.Helpers
         /// </summary>
         public long ReadLong()
         {
-            return BitConverter.ToInt64(this.Buffer, StartRead(8));
+            return BitConverter.ToInt64(Buffer, StartRead(8));
         }
 
         /// <summary>
@@ -148,7 +160,7 @@ namespace DarkMapleLib.Helpers
         /// </summary>
         public ulong ReadULong()
         {
-            return BitConverter.ToUInt64(this.Buffer, StartRead(8));
+            return BitConverter.ToUInt64(Buffer, StartRead(8));
         }
 
         /// <summary>
@@ -206,13 +218,21 @@ namespace DarkMapleLib.Helpers
         public byte[] ToArray(bool direct = false)
         {
             if (direct)
-                return this.Buffer;
+                return Buffer;
             else
             {
-                byte[] toRet = new byte[this.Buffer.Length];
-                System.Buffer.BlockCopy(this.Buffer, 0, toRet, 0, this.Buffer.Length);
+                byte[] toRet = new byte[Buffer.Length];
+                System.Buffer.BlockCopy(Buffer, 0, toRet, 0, Buffer.Length);
                 return toRet;
             }
+        }
+
+        /// <summary>
+        /// Returns a hex string representing the current ArrayReader
+        /// </summary>
+        public override string ToString()
+        {
+            return Buffer.ToHexString();
         }
     }
 }
